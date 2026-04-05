@@ -1,80 +1,50 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import { collection, getDocs, query, where } from "firebase/firestore";
-import { initializeApp, getApps } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
-import type { Metadata } from "next";
-import RedirectClient from "./RedirectClient";
+import { db } from "@/lib/firebase";
+import { useParams } from "next/navigation";
 
-// Server-side Firebase init for metadata generation
-function getServerDb() {
-  const firebaseConfig = {
-    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-  };
-  const app =
-    getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-  return getFirestore(app);
+interface LinkData {
+  instagramUrl: string;
+  thumbnail: string;
+  title: string;
 }
 
-async function getLinkData(slug: string) {
-  try {
-    const db = getServerDb();
-    const q = query(collection(db, "links"), where("slug", "==", slug));
-    const snap = await getDocs(q);
-    if (snap.empty) return null;
-    return snap.docs[0].data() as {
-      slug: string;
-      instagramUrl: string;
-      thumbnail: string;
-      title: string;
-    };
-  } catch {
-    return null;
-  }
-}
+export default function RedirectPage() {
+  const params = useParams();
+  const slug = params.slug as string;
+  const [link, setLink] = useState<LinkData | null>(null);
+  const [notFound, setNotFound] = useState(false);
 
-export async function generateMetadata({
-  params,
-}: {
-  params: Promise<{ slug: string }>;
-}): Promise<Metadata> {
-  const { slug } = await params;
-  const link = await getLinkData(slug);
+  useEffect(() => {
+    async function fetchLink() {
+      try {
+        const q = query(collection(db, "links"), where("slug", "==", slug));
+        const snap = await getDocs(q);
+        if (snap.empty) {
+          setNotFound(true);
+          return;
+        }
+        const data = snap.docs[0].data() as LinkData;
+        setLink(data);
 
-  if (!link) {
-    return { title: "Content Crafters" };
-  }
+        // Update page title
+        document.title = `${data.title} | Content Crafters`;
 
-  return {
-    title: `${link.title} | Content Crafters`,
-    description: `Watch ${link.title} by Content Crafters`,
-    openGraph: {
-      title: link.title,
-      description: `Watch ${link.title} by Content Crafters`,
-      images: [{ url: link.thumbnail, width: 1200, height: 630 }],
-      type: "website",
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: link.title,
-      description: `Watch ${link.title} by Content Crafters`,
-      images: [link.thumbnail],
-    },
-  };
-}
+        // Redirect after a short delay
+        setTimeout(() => {
+          window.location.href = data.instagramUrl;
+        }, 1500);
+      } catch {
+        setNotFound(true);
+      }
+    }
 
-export default async function RedirectPage({
-  params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
-  const { slug } = await params;
-  const link = await getLinkData(slug);
+    if (slug) fetchLink();
+  }, [slug]);
 
-  if (!link) {
+  if (notFound) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
@@ -95,5 +65,24 @@ export default async function RedirectPage({
     );
   }
 
-  return <RedirectClient url={link.instagramUrl} title={link.title} />;
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="text-center">
+        <div className="w-10 h-10 border-2 border-accent border-t-transparent rounded-full animate-spin mx-auto mb-6" />
+        <h1 className="font-serif text-2xl font-semibold mb-2">
+          {link?.title || "Loading..."}
+        </h1>
+        {link?.thumbnail && (
+          <img
+            src={link.thumbnail}
+            alt={link.title}
+            className="w-64 h-40 object-cover rounded-xl mx-auto mt-4 mb-4"
+          />
+        )}
+        <p className="text-foreground/50 text-sm">
+          Redirecting to Instagram...
+        </p>
+      </div>
+    </div>
+  );
 }
